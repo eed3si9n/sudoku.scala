@@ -5,20 +5,29 @@ import Scalaz._
 import typelevel._
 
 object Solver {
-  def solve(game: Vector[Cell]) {
+  def solve(game: Game) {
 
 
   }
-  def threeMachines(pos: (Int, Int)) =
-    horizontalMachine(pos) :: verticalMachine(pos) :: groupMachine(pos) :: AppFunc.HNil
+  def runOnce(game: Game): Game = {
+    val (nonEmptyCells, emptyCells) = game.cells partition {_.value.isDefined}
+    val solveCells = emptyCells map { cell =>
+      val candidates = (cellMachine(cell.pos, game.sqrtn) traverse game.cells) exec game.allValues
+      if (candidates.size == 1) cell.copy(value = candidates(0).some, cs = Vector())
+      else cell.copy(value = none, cs = candidates)
+    }
+    game.copy(cells = nonEmptyCells ++ solveCells)
+  }
+  def cellMachine(pos: (Int, Int), n: Int) =
+    sequence(horizontalMachine(pos) :: verticalMachine(pos) :: groupMachine(pos, n) :: AppFunc.HNil)    
   def horizontalMachine(pos: (Int, Int)) =
     buildMachine { cell: Cell => pos._2 == cell.pos._2 && cell.value.isDefined }
   def verticalMachine(pos: (Int, Int)) =
     buildMachine { cell: Cell => pos._1 == cell.pos._1 && cell.value.isDefined }
-  def groupMachine(pos: (Int, Int)) =
+  def groupMachine(pos: (Int, Int), n: Int) =
     buildMachine { cell: Cell =>
-      ((pos._1 - 1) / 3 == (cell.pos._1 - 1) / 3) &&
-      ((pos._2 - 1) / 3 == (cell.pos._2 - 1) / 3) &&
+      ((pos._1 - 1) / n == (cell.pos._1 - 1) / n) &&
+      ((pos._2 - 1) / n == (cell.pos._2 - 1) / n) &&
       cell.value.isDefined
     }
   def buildMachine(predicate: Cell => Boolean) = AppFuncU { cell: Cell =>
