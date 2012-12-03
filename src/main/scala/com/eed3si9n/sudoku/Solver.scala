@@ -19,10 +19,10 @@ object Solver {
   }
   def runOnce(game: Game): Game = {
     val (nonEmptyCells, emptyCells) = game.cells partition {_.value.isDefined}
+    def homogenize[M[_], B, T <: HList](xs: HCons[M[B], T]): List[M[B]] =
+      xs.fold[Id, List[M[B]], Homogenize[M[B]]](new Homogenize) 
     def foldCells(xs: Vector[Cell], game: Game): Vector[Cell] = {
       def f[T <: TCList](cell: Cell) = Solver.cellMachine(cell.pos, game.sqrtn)
-      def homogenize[M[_], B, T <: HList](xs: HCons[M[B], T]): List[M[B]] =
-        xs.fold[Id, List[M[B]], Homogenize[M[B]]](new Homogenize)      
       val hnil = AppFunc.HNil[Cell, List[Unit]]
       val css = if (xs.isEmpty) Nil
         else if (xs.size === 1) homogenize((f(xs(0)) :: hnil) traverse game.cells) map {_ exec game.allValues}
@@ -35,7 +35,11 @@ object Solver {
       }
     }
     val cellsWithCs = Vector((emptyCells grouped 4).toSeq: _*) flatMap { g => foldCells(g, game) }
-    val solveCells = cellsWithCs map { cell =>
+    val cellsWithCs2: Vector[Cell] = cellsWithCs map { x =>
+      val css = homogenize(evalMachine(x.pos, game.sqrtn) traverse cellsWithCs) map {_ exec x.cs}
+      x.copy(cs = (css find {_.size == 1}) | x.cs)
+    }
+    val solveCells = cellsWithCs2 map { cell =>
       if (cell.cs.size == 1) cell.copy(value = cell.cs(0).some, cs = Vector())
       else cell
     }
@@ -58,7 +62,26 @@ object Solver {
       xs <- get[Vector[Int]]
       _  <- put(if (predicate(cell)) xs filter {_ != cell.value.get} 
                 else xs)
-    } yield()
+    } yield ()
+  }
+  def evalMachine(pos: (Int, Int), n: Int) =
+    horizEvalMachine(pos) :: vertEvalMachine(pos) :: groupEvalMachine(pos, n) :: AppFunc.HNil
+  def horizEvalMachine(pos: (Int, Int)) =
+    buildEvalMachine { cell: Cell => (pos != cell.pos) && (pos._2 == cell.pos._2) }
+  def vertEvalMachine(pos: (Int, Int)) =
+    buildEvalMachine { cell: Cell => (pos != cell.pos) && (pos._1 == cell.pos._1) }
+  def groupEvalMachine(pos: (Int, Int), n: Int) =
+    buildEvalMachine { cell: Cell =>
+      (pos != cell.pos) &&
+      ((pos._1 - 1) / n == (cell.pos._1 - 1) / n) &&
+      ((pos._2 - 1) / n == (cell.pos._2 - 1) / n)
+    }
+  def buildEvalMachine(predicate: Cell => Boolean) = AppFuncU { cell: Cell =>
+    for {
+      xs <- get[Vector[Int]]
+      _  <- put(if (predicate(cell)) xs diff cell.cs
+                else xs)
+    } yield ()
   }
   def sequence[M[_]: Applicative, T <: TCList, B](g: HListFunc[TCCons[M, T], Applicative, Cell, B]) =
     new Func[M, Applicative, Cell, List[B]] {

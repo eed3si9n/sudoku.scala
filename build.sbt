@@ -16,4 +16,4 @@ resolvers ++= Seq(
 
 initialCommands in console := """import scalaz._, Scalaz._, typelevel._
                                 |import com.eed3si9n.sudoku._
-                                |val game = com.eed3si9n.sudoku.Reader.read("data/1.sdk")""".stripMargin
+                                |val game = com.eed3si9n.sudoku.Reader.read("data/3.sdk")""".stripMargin
