@@ -6,15 +6,38 @@ import typelevel._
 
 object Solver {
   def solve(game: Game) {
-
-
+    def doLoop(g: Game) {
+      println(g.toString)
+      if (g.isSolved) println("solved")
+      else {
+        val g2 = runOnce(g)
+        if (g == g2) sys.error("solver is stuck")
+        else doLoop(g2)
+      }
+    }
+    doLoop(game)
   }
   def runOnce(game: Game): Game = {
     val (nonEmptyCells, emptyCells) = game.cells partition {_.value.isDefined}
-    val solveCells = emptyCells map { cell =>
-      val candidates = (cellMachine(cell.pos, game.sqrtn) traverse game.cells) exec game.allValues
-      if (candidates.size == 1) cell.copy(value = candidates(0).some, cs = Vector())
-      else cell.copy(value = none, cs = candidates)
+    def foldCells(xs: Vector[Cell], game: Game): Vector[Cell] = {
+      def f[T <: TCList](cell: Cell) = Solver.cellMachine(cell.pos, game.sqrtn)
+      def homogenize[M[_], B, T <: HList](xs: HCons[M[B], T]): List[M[B]] =
+        xs.fold[Id, List[M[B]], Homogenize[M[B]]](new Homogenize)      
+      val hnil = AppFunc.HNil[Cell, List[Unit]]
+      val css = if (xs.isEmpty) Nil
+        else if (xs.size === 1) homogenize((f(xs(0)) :: hnil) traverse game.cells) map {_ exec game.allValues}
+        else if (xs.size === 2) homogenize((f(xs(1)) :: f(xs(0)) :: hnil) traverse game.cells) map {_ exec game.allValues}
+        else if (xs.size === 3) homogenize((f(xs(2)) :: f(xs(1)) :: f(xs(0)) :: hnil) traverse game.cells) map {_ exec game.allValues}
+        else if (xs.size === 4) homogenize((f(xs(3)) :: f(xs(2)) :: f(xs(1)) :: f(xs(0)) :: hnil) traverse game.cells) map {_ exec game.allValues}
+        else sys.error("invalid")
+      (xs zip css.reverse) map { case (cell, cs) =>
+        cell.copy(cs = cs)
+      }
+    }
+    val cellsWithCs = Vector((emptyCells grouped 4).toSeq: _*) flatMap { g => foldCells(g, game) }
+    val solveCells = cellsWithCs map { cell =>
+      if (cell.cs.size == 1) cell.copy(value = cell.cs(0).some, cs = Vector())
+      else cell
     }
     game.copy(cells = nonEmptyCells ++ solveCells)
   }
@@ -33,26 +56,25 @@ object Solver {
   def buildMachine(predicate: Cell => Boolean) = AppFuncU { cell: Cell =>
     for {
       xs <- get[Vector[Int]]
-      val updated = if (predicate(cell)) xs filter {_ != cell.value.get} 
-                    else xs
-      _  <- put(updated)
-    } yield updated
+      _  <- put(if (predicate(cell)) xs filter {_ != cell.value.get} 
+                else xs)
+    } yield()
   }
-  def sequence[M[_]: Applicative, T <: TCList](g: HListFunc[TCCons[M, T], Applicative, Cell, Vector[Int]]) =
-    new Func[M, Applicative, Cell, List[Vector[Int]]] {
-      def runA(c: Cell): M[List[Vector[Int]]] = {
+  def sequence[M[_]: Applicative, T <: TCList, B](g: HListFunc[TCCons[M, T], Applicative, Cell, B]) =
+    new Func[M, Applicative, Cell, List[B]] {
+      def runA(c: Cell): M[List[B]] = {
         val xs = g.runA(c)
-        val list: List[M[Vector[Int]]] = xs.fold[Id, List[M[Vector[Int]]], Homogenize[M[Vector[Int]]]](new Homogenize)
+        val list: List[M[B]] = xs.fold[Id, List[M[B]], Homogenize[M[B]]](new Homogenize)
         list.sequence
       }
       def F = Applicative[M]
       def TC = g.TC
-    }  
-  def homogenize[M[_]: Applicative, T <: TCList](g: HListFunc[TCCons[M, T], Applicative, Cell, Vector[Int]]) =
-    new Func[({type λ[α] = List[M[α]]})#λ, Applicative, Cell, Vector[Int]] {  
-      def runA(c: Cell): List[M[Vector[Int]]] = {
+    }
+  def homogenize[M[_]: Applicative, T <: TCList, B](g: HListFunc[TCCons[M, T], Applicative, Cell, B]) =
+    new Func[({type λ[α] = List[M[α]]})#λ, Applicative, Cell, B] {  
+      def runA(c: Cell): List[M[B]] = {
         val xs = g.runA(c)
-        xs.fold[Id, List[M[Vector[Int]]], Homogenize[M[Vector[Int]]]](new Homogenize)
+        xs.fold[Id, List[M[B]], Homogenize[M[B]]](new Homogenize)
       }
       def F = (Applicative[List] <<: Applicative[M] <<: TC.idCompose).instance
       def TC = g.TC

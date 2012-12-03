@@ -28,6 +28,7 @@ case class Game(cells: Vector[Cell]) {
   val sqrtn: Int = math.pow(n, 0.5).round.toInt
   val allValues = Vector((1 |-> n): _*)
   def apply(pos: (Int, Int)) = (cells.find {_.pos == pos}).get
+  def isSolved: Boolean = cells forall {_.value.isDefined} 
   override def toString: String = {
     (allValues flatMap { y =>
       allValues flatMap { x =>
