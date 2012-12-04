@@ -22,7 +22,7 @@ object Solver {
     def homogenize[M[_], B, T <: HList](xs: HCons[M[B], T]): List[M[B]] =
       xs.fold[Id, List[M[B]], Homogenize[M[B]]](new Homogenize) 
     def foldCells(xs: Vector[Cell], game: Game): Vector[Cell] = {
-      def f[T <: TCList](cell: Cell) = Solver.cellMachine(cell.pos, game.sqrtn)
+      def f(cell: Cell) = Solver.cellMachine(cell.pos, game.sqrtn)
       val hnil = AppFunc.HNil[Cell, List[Unit]]
       val css = if (xs.isEmpty) Nil
         else if (xs.size === 1) homogenize((f(xs(0)) :: hnil) traverse game.cells) map {_ exec game.allValues}
